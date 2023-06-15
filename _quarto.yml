@@ -22,6 +22,8 @@ website:
             file: content/01_journal/03_ml_h2o_1.qmd
           - text: "04 Machine Learning H2O 2 & Performance Measures"
             file: content/01_journal/04_ml_h2o_2_and_performance_measures.qmd
+          - text: "05 Black box model with lime"
+            file: content/01_journal/05_black_box_lime.qmd
           - text: "tEst pAge"
             file: content/01_journal/Test_Training.qmd
       - text: "Class notes"

@@ -3,9 +3,26 @@ title: "Automated machine learning with H2O part 2 AND Performance Measure"
 author: "Agam Safaruddin"
 ---
 
+::: callout-note
+Since h2o requires java 64 bit, and I have been working on the challenges in kaggle.com. I will still publish this, and I will also include the notebook file called 'automated-ml-with-h2o-2.ipynb' in the github workspace.
+:::
+
 # Challenge 1 H20
 * Predict if product will be in backorder status
 * given a number of product metrics such as current inventory, transit time, demand forecasts and prior sales
+
+## Libraries
+```{r}
+library(h2o)
+#library(cowplot)
+library(glue)
+library(tidyverse)
+library(readxl)
+library(rsample)
+library(recipes)
+library(PerformanceAnalytics)  # for skewness  
+```
+
 
 # 1 Load training and test dataset
 ```{r}
@@ -32,7 +49,52 @@ test_readable_tbl_challenge_1  <- testing(split_obj_challenge_1)
 ```
 
 
-*Histogram Facet*
+**Function for histogram facet**
+```{r}
+# Plot Faceted Histgoram function
+
+# To create a function and test it, we can assign our data temporarily to data
+data <- train_readable_tbl_challenge_1 
+
+plot_hist_facet <- function(data, fct_reorder = FALSE, fct_rev = FALSE, 
+                            bins = 10, fill = "#2dc6d6", color = "white", 
+                            ncol = 5, scale = "free") {
+    
+    data_factored <- data %>%
+    
+        # Convert input to make the function fail safe 
+        # (if other content might be provided)
+        mutate_if(is.character, as.factor) %>%
+        mutate_if(is.factor, as.numeric) %>%
+        
+        # Data must be in long format to make facets
+        pivot_longer(cols = everything(),
+                     names_to = "key",
+                     values_to = "value",
+                     # set key = factor() to keep the order
+                     names_transform = list(key = forcats::fct_inorder)) 
+    
+    if (fct_reorder) {
+        data_factored <- data_factored %>%
+            mutate(key = as.character(key) %>% as.factor())
+    }
+    
+    if (fct_rev) {
+        data_factored <- data_factored %>%
+            mutate(key = fct_rev(key))
+    }
+    
+    g <- data_factored %>%
+        ggplot(aes(x = value, group = key)) +
+        geom_histogram(bins = bins, fill = fill, color = color) +
+        facet_wrap(~ key, ncol = ncol, scale = scale)
+    
+    return(g)
+    
+}
+```
+
+**Histogram Facet**
 ```{r}
 train_readable_tbl_challenge_1 %>% 
   relocate(went_on_backorder) %>% 
@@ -84,6 +146,40 @@ train_tbl_challenge_1 %>%
         mutate(across(where(is.character), as_factor))
         
 ```
+**Get correlation function**
+```{r}
+get_cor <- function(data, target, use = "pairwise.complete.obs",
+                    fct_reorder = FALSE, fct_rev = FALSE) {
+
+    feature_expr <- enquo(target)
+    feature_name <- quo_name(feature_expr)
+
+    data_cor <- data %>%
+        mutate(across(where(is.character), as.factor)) %>%
+        mutate(across(where(is.factor), as.numeric)) %>%
+        cor(use = use) %>%
+        as.tibble() %>%
+        mutate(feature = names(.)) %>%
+        select(feature, !! feature_expr) %>%
+        filter(!(feature == feature_name)) %>%
+        mutate_if(is.character, as_factor)
+
+    if (fct_reorder) {
+        data_cor <- data_cor %>% 
+            mutate(feature = fct_reorder(feature, !! feature_expr)) %>%
+            arrange(feature)
+    }
+
+    if (fct_rev) {
+        data_cor <- data_cor %>% 
+            mutate(feature = fct_rev(feature)) %>%
+            arrange(feature)
+    }
+
+    return(data_cor)
+
+}
+```
 
 ```{r}
 data_cor_challenge_1 <- train_tbl_challenge_1 %>%
@@ -130,7 +226,7 @@ test_tbl_challenge_1  <- bake(recipe_obj_challenge_1, new_data = test_readable_t
 
 
 **Modeling**
-```{r}
+
 # Modeling
 h2o.init()
 
@@ -145,9 +241,9 @@ test_h2o_challenge_1  <- as.h2o(test_tbl_challenge_1)
 #y <- "went_on_backorder"
 y <- "went_on_backorder_Yes"
 x <- setdiff(names(test_h2o_challenge_1), y)
-```
 
-```{r}
+
+
 automl_models_h2o_challenge_1 <- h2o.automl(
   x = x,
   y = y,
@@ -157,11 +253,13 @@ automl_models_h2o_challenge_1 <- h2o.automl(
   max_runtime_secs  = 30,
   nfolds            = 5 
 )
-```
+
+
+
 
 
 # Inspecting Leaderboards
-```{r}
+
 typeof(automl_models_h2o_challenge_1)
 
 
@@ -169,11 +267,11 @@ slotNames(automl_models_h2o_challenge_1)
 
 
 print(automl_models_h2o_challenge_1@leaderboard)
-```
+
 
 
 # Make Predictions
-```{r}
+
 stacked_ensemble_h2o_challenge_1 <- h2o.getModel("StackedEnsemble_BestOfFamily_1_AutoML_2_20230615_92614")
 stacked_ensemble_h2o_challenge_1
 
@@ -183,7 +281,7 @@ typeof(predictions)
 ## [1] "environment"
 
 predictions_tbl <- predictions %>% as_tibble()
-```
+
 
 ****
 # Challenge 2 Performance Measures
