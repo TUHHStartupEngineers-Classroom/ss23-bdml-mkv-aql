@@ -1,0 +1,241 @@
+---
+title: "Automated machine learning with H2O part 2 AND Performance Measure"
+author: "Agam Safaruddin"
+---
+
+# Challenge 1 H20
+* Predict if product will be in backorder status
+* given a number of product metrics such as current inventory, transit time, demand forecasts and prior sales
+
+# 1 Load training and test dataset
+```{r}
+product_backorders_tbl <- read_csv("datas/product_backorders.csv")
+```
+
+## 2 Preprocessing
+**Get varaibles names list**
+```{r}
+column_names <- names(product_backorders_tbl)
+print(column_names)
+```
+
+
+**Split data**
+```{r}
+# Split into test and train
+set.seed(seed = 1113)
+split_obj_challenge_1 <- rsample::initial_split(product_backorders_tbl, prop = 0.8)
+
+# Assign training and test data
+train_readable_tbl_challenge_1 <- training(split_obj_challenge_1)
+test_readable_tbl_challenge_1  <- testing(split_obj_challenge_1)
+```
+
+
+*Histogram Facet*
+```{r}
+train_readable_tbl_challenge_1 %>% 
+  relocate(went_on_backorder) %>% 
+  plot_hist_facet()
+```
+
+
+**zero variance features**
+```{r}
+recipe_obj_challenge_1 <- recipe(went_on_backorder ~ ., data = train_readable_tbl_challenge_1) %>%
+    step_zv(all_predictors()) %>%
+    step_dummy(all_nominal()) 
+
+recipe_obj_challenge_1 %>% 
+      prep()
+```
+
+
+**Bake train and test data**
+```{r}
+prep_recipe_challenge_1 <- prep(recipe_obj_challenge_1)
+
+train_tbl_challenge_1 <- bake(prep_recipe_challenge_1, new_data = train_readable_tbl_challenge_1)
+
+train_tbl_challenge_1 %>% glimpse()
+
+test_tbl_challenge_1 <- bake(prep_recipe_challenge_1, new_data = test_readable_tbl_challenge_1)
+```
+
+
+# 3 Correlation Analysis
+```{r}
+train_tbl_challenge_1 %>%
+
+        # Convert characters & factors to numeric
+        mutate(across(where(is.character), as.factor)) %>%
+        mutate(across(where(is.factor), as.numeric)) %>%
+        
+        # Correlation
+        cor(use = "pairwise.complete.obs") %>% 
+        as_tibble() %>%
+        mutate(feature = names(.)) %>% 
+        select(feature, went_on_backorder_Yes) %>% 
+        
+        # Filter the target, because we now the correlation is 100%
+        filter(!(feature == "went_on_backorder_Yes")) %>% 
+        
+        # Convert character back to factors
+        mutate(across(where(is.character), as_factor))
+        
+```
+
+```{r}
+data_cor_challenge_1 <- train_tbl_challenge_1 %>%
+
+  # Correlation
+  get_cor(target = went_on_backorder_Yes, fct_reorder = T, fct_rev = T) %>%
+  
+  # Create label text
+  mutate(feature_name_text = round(went_on_backorder_Yes, digits = 2)) %>%
+  
+  # Create flags so that we can change the color for poitive and negative
+  mutate(Correlation = case_when(
+    (went_on_backorder_Yes) >= 0 ~ "Positive",
+    TRUE                   ~ "Negative") %>% as.factor())
+
+data_cor_challenge_1 %>%
+  ggplot(aes(x = went_on_backorder_Yes, y = feature, group = feature)) +
+  geom_point(aes(color = Correlation), size = 2) +
+  geom_segment(aes(xend = 0, yend = feature, color = Correlation), size = 1) +
+  geom_vline(xintercept = 0, color = "black", size = 0.5) +
+  expand_limits(x = c(-1, 1)) +
+  scale_color_manual(values = c("red", "#2dc6d6")) +
+  geom_label(aes(label = feature_name_text), hjust = "outward")
+```
+
+
+# 4 Machine Learning with H2O 
+```{r}
+product_backorders_tbl          <- read_csv("datas/product_backorders.csv")
+set.seed(seed = 1113)
+split_obj                       <- rsample::initial_split(product_backorders_tbl, prop = 0.8)
+train_readable_tbl_challenge_1              <- training(split_obj)
+test_readable_tbl_challenge_1               <- testing(split_obj)
+
+recipe_obj_challenge_1 <- recipe(went_on_backorder ~., data = train_readable_tbl_challenge_1) %>% 
+    step_zv(all_predictors()) %>% 
+step_dummy(all_nominal()) %>%
+
+    prep()
+
+train_tbl_challenge_1 <- bake(recipe_obj_challenge_1, new_data = train_readable_tbl_challenge_1)
+test_tbl_challenge_1  <- bake(recipe_obj_challenge_1, new_data = test_readable_tbl_challenge_1)
+```
+
+
+**Modeling**
+```{r}
+# Modeling
+h2o.init()
+
+# Split data into a training and a validation data frame
+# Setting the seed is just for reproducability
+split_h2o_challenge_1 <- h2o.splitFrame(as.h2o(train_tbl_challenge_1), ratios = c(0.8), seed = 1234)
+train_h2o_challenge_1 <- split_h2o_challenge_1[[1]]
+valid_h2o_challenge_1 <- split_h2o_challenge_1[[2]]
+test_h2o_challenge_1  <- as.h2o(test_tbl_challenge_1)
+
+# Set the target and predictors
+#y <- "went_on_backorder"
+y <- "went_on_backorder_Yes"
+x <- setdiff(names(test_h2o_challenge_1), y)
+```
+
+```{r}
+automl_models_h2o_challenge_1 <- h2o.automl(
+  x = x,
+  y = y,
+  training_frame    = train_h2o_challenge_1,
+  validation_frame  = valid_h2o_challenge_1,
+  leaderboard_frame = test_h2o_challenge_1,
+  max_runtime_secs  = 30,
+  nfolds            = 5 
+)
+```
+
+
+# Inspecting Leaderboards
+```{r}
+typeof(automl_models_h2o_challenge_1)
+
+
+slotNames(automl_models_h2o_challenge_1)
+
+
+print(automl_models_h2o_challenge_1@leaderboard)
+```
+
+
+# Make Predictions
+```{r}
+stacked_ensemble_h2o_challenge_1 <- h2o.getModel("StackedEnsemble_BestOfFamily_1_AutoML_2_20230615_92614")
+stacked_ensemble_h2o_challenge_1
+
+predictions <- h2o.predict(stacked_ensemble_h2o_challenge_1, newdata = as.h2o(test_tbl_challenge_1))
+
+typeof(predictions)
+## [1] "environment"
+
+predictions_tbl <- predictions %>% as_tibble()
+```
+
+****
+# Challenge 2 Performance Measures
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
