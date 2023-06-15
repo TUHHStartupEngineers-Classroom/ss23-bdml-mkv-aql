@@ -1,0 +1,361 @@
+---
+title: "Fundamental"
+author: "Agam Safaruddin"
+---
+
+
+# Requirements
+## Libraries
+```{r}
+library(tidyverse)
+library(modelr)
+library(readxl)
+library(tidyverse)
+library(broom)
+library(umap)
+library(ggrepel) # Addon for ggplot, so that the labels do not overlap
+library(tidyquant) # TO use tq_theme()
+```
+
+
+## Get Data
+* Important: company, sector
+* Important: symbol, date, adjusted
+* Adjusted means, price of stock after paying off dividends 
+```{r}
+sp_500_daily_returns_tbl = readRDS("datas/sp_500_daily_returns_tbl.rds")
+
+sp_500_index_tbl = readRDS("datas/sp_500_index_tbl.rds")
+
+sp_500_prices_tbl = readRDS("datas/sp_500_prices_tbl.rds")
+
+stock_date_matrix_table = readRDS("datas/stock_date_matrix_tbl.rds")
+```
+
+## preprocessing
+
+**Join table of index_tbl and prices_tbl**
+```{r}
+sp_500_prices_index_joined_tbl = dplyr::left_join(sp_500_prices_tbl, sp_500_index_tbl, by = c("symbol" = "symbol"))
+```
+
+**Filtering out non essentials and dates earlier than 2018**
+```{r}
+sp_500_prices_index_joined_essentials_tbl = sp_500_prices_index_joined_tbl %>% select(-open, -high, -low, -close, -volume, -weight, -shares_held) %>%
+  filter(date >= as.Date("2018-01-01"))
+```
+
+**Standardize / Normalize**
+```{r}
+sp_500_prices_index_joined_essentials_normalized_tbl = sp_500_prices_index_joined_essentials_tbl %>%
+     group_by(symbol) %>%
+    #mutate(adjusted_normalized = adjusted / sum(adjusted))
+    mutate(adjusted_normalized = scale(adjusted)) %>%
+    mutate(percentage_change_adjusted_normalized = c(NA, diff(adjusted_normalized))*100) %>%
+    mutate(percentage_change_adjusted = (adjusted_normalized - lag(adjusted_normalized)) / lag(adjusted_normalized)) %>%
+    mutate(percentage_change_adjusted_using_adjusted = (adjusted - lag(adjusted)) / lag(adjusted)) %>%
+    ungroup()
+```
+
+**Cleaning previous table**
+* This is the daily return table
+```{r}
+sp_500_prices_index_joined_essentials_normalized_latest_tbl = sp_500_prices_index_joined_essentials_normalized_tbl %>% 
+    select(-adjusted_normalized, -percentage_change_adjusted_normalized, -percentage_change_adjusted) %>%
+    rename(pct_return = percentage_change_adjusted_using_adjusted)
+```
+
+**Pick only symbol, date, pct_return**
+* Naming readjustment: sp_500_prices_index_joined_essentials_normalized_latest_tbl >>>> sp_500_dailyreturns_tbl 
+* Get rid of NA, change to 0
+```{r}
+sp_500_dailyreturns_tbl = sp_500_prices_index_joined_essentials_normalized_latest_tbl %>%
+    select(-adjusted, -company, -sector)
+
+sp_500_dailyreturns_tbl[is.na(sp_500_dailyreturns_tbl)] = 0
+```
+
+**User-Item (symbol - pct_return) format**
+```{r}
+stock_date_matrix_tbl = sp_500_dailyreturns_tbl %>%
+    select(symbol, date, pct_return) %>%
+    pivot_wider(names_from = date, values_from = pct_return, values_fill = 0) %>%
+    ungroup() %>%
+    arrange(symbol) %>%
+    select(-'2018-01-02')
+```
+
+**K Means Clustering**
+```{r}
+kmeans_obj_challenge <- stock_date_matrix_tbl %>%
+    select(-symbol) %>%
+    kmeans(centers = 4, nstart = 100)
+```
+
+**Checking results*
+```{r}
+broom::tidy(kmeans_obj_challenge) %>% glimpse()
+broom::glance(kmeans_obj_challenge)
+```
+
+**Augment**
+```{r}
+# Add the clusters to the data
+broom::augment(kmeans_obj_challenge, stock_date_matrix_tbl) %>%
+    select(symbol, .cluster)
+```
+
+**Map Clusters**
+```{r}
+kmeans_mapper <- function(centers = 4) {
+    
+    stock_date_matrix_tbl %>%
+        select(-symbol) %>%
+        kmeans(centers = centers, nstart = 100)
+}
+
+4 %>% kmeans_mapper() %>% glance()
+```
+
+**Map function to many elements**
+```{r}
+# Mapping the function to many elements
+kmeans_mapped_tbl_challenge <- tibble(centers = 1:30) %>%
+    mutate(k_means = centers %>% map(kmeans_mapper)) %>%
+    mutate(glance  = k_means %>% map(glance))
+```
+
+**tot.wihinss**
+```{r}
+kmeans_mapped_tbl_challenge %>%
+    unnest(glance) %>%
+    select(centers, tot.withinss)
+```
+
+**Skree PLot**
+```{r}
+#Skree Plot ----
+
+kmeans_mapped_tbl_challenge %>%
+    unnest(glance) %>%
+    select(centers, tot.withinss) %>%
+    
+    # Visualization
+    ggplot(aes(centers, tot.withinss)) +
+    geom_point(color = "#2DC6D6", size = 4) +
+    geom_line(color = "#2DC6D6", size = 1) +
+    # Add labels (which are repelled a little)
+    ggrepel::geom_label_repel(aes(label = centers), color = "#2DC6D6") + 
+    
+    # Formatting
+    labs(title = "Skree Plot",
+    subtitle = "Measures the distance each of the customer are from the closes K-Means center",
+    caption = "Conclusion: Based on the Scree Plot, we select 4 clusters to segment the customer base.")
+```
+
+# UMAP
+```{r}
+umap_obj_challenge <- stock_date_matrix_tbl %>%
+    select(-symbol) %>%
+    umap()
+    
+options(ggrepel.max.overlaps = Inf) # To ignore overlaps
+library(tidyquant) # TO use tq_theme()
+
+umap_results_tbl_challenge <- umap_obj_challenge$layout %>%
+    as_tibble(.name_repair = "unique") %>% # argument is required to set names in the next step
+    set_names(c("x", "y")) %>%
+    bind_cols(
+        stock_date_matrix_tbl %>% select(symbol)
+    )
+
+umap_results_tbl_challenge %>%
+    ggplot(aes(x, y)) +
+    theme_tq() +
+    geom_point(alpha = 0.5) + 
+    geom_label_repel(aes(label = symbol), size = 2) +
+    labs(
+        title = "UMAP Projection",
+        subtitle = "",
+        fill = ""
+    )
+```
+
+```{r}
+# Get the data for the third element (which we have chosen in the skree plot)
+kmeans_3_obj <- kmeans_mapped_tbl_challenge %>%
+    pull(k_means) %>%
+    pluck(4)
+
+# Convert it to a tibble with broom
+kmeans_3_clusters_tbl_challenge <- kmeans_3_obj %>% 
+    augment(stock_date_matrix_tbl) %>%
+    # Select the data we need
+    select(symbol, .cluster)
+
+# Bind data together
+umap_kmeans_3_results_tbl_challenge <- umap_results_tbl_challenge %>%
+    left_join(kmeans_3_clusters_tbl_challenge)
+```
+
+```{r}
+umap_kmeans_3_results_tbl_challenge %>%
+    mutate(label_text = str_glue("Company: {symbol}
+                                 Cluster: {.cluster}")) %>%
+    
+    ggplot(aes(x, y, color = .cluster)) +
+    
+    # Geometries
+    geom_point() +
+    geom_label_repel(aes(label = label_text), size = 2, fill = "#282A36") +
+    
+    # Formatting
+    scale_color_manual(values=c("#2d72d6", "#2dc6d6", "#2dd692", "#09d3c2")) +
+    labs(title = "Customer Segmentation: 2D Projection",
+    subtitle = "UMAP 2D Projection with K-Means Cluster Assignment",
+    caption = "Conclusion: 4 Company Segments identified using 2 algorithms") +
+    theme(legend.position = "none")
+```
+
+# **K means clustering for 10 centers**
+```{r}
+kmeans_obj_challenge_10 <- stock_date_matrix_tbl %>%
+    select(-symbol) %>%
+    kmeans(centers = 10, nstart = 100)
+kmeans_obj_challenge_10$cluster
+
+```
+
+```{r}
+broom::tidy(kmeans_obj_challenge_10) %>% glimpse()
+```
+
+```{r}
+broom::glance(kmeans_obj_challenge_10)
+```
+
+```{r}
+# Add the clusters to the data
+broom::augment(kmeans_obj_challenge_10, stock_date_matrix_tbl) %>%
+    select(symbol, .cluster)
+```
+
+```{r}
+kmeans_mapper_10 <- function(centers = 10) {
+    
+    stock_date_matrix_tbl %>%
+        select(-symbol) %>%
+        kmeans(centers = centers, nstart = 100)
+}
+
+10 %>% kmeans_mapper_10() %>% glance()
+```
+
+```{r}
+# Mapping the function to many elements
+kmeans_mapped_tbl_challenge_10 <- tibble(centers = 1:30) %>%
+    mutate(k_means = centers %>% map(kmeans_mapper_10)) %>%
+    mutate(glance  = k_means %>% map(glance))
+
+```
+
+```{r}
+kmeans_mapped_tbl_challenge_10 %>%
+    unnest(glance) %>%
+    select(centers, tot.withinss)
+```
+
+```{r}
+umap_obj_challenge_10 <- stock_date_matrix_tbl %>%
+    select(-symbol) %>%
+    umap()
+```
+
+```{r}
+umap_results_tbl_challenge_10 <- umap_obj_challenge_10$layout %>%
+    as_tibble(.name_repair = "unique") %>% # argument is required to set names in the next step
+    set_names(c("x", "y")) %>%
+    bind_cols(
+        stock_date_matrix_tbl %>% select(symbol)
+    )
+
+umap_results_tbl_challenge_10 %>%
+    ggplot(aes(x, y)) +
+    theme_tq() +
+    geom_point(alpha = 0.5) + 
+    geom_label_repel(aes(label = symbol), size = 2) +
+    labs(
+        title = "UMAP Projection for 10 centers",
+        subtitle = "",
+        fill = ""
+    )
+```
+
+```{r}
+umap_results_tbl_challenge_10 %>%
+    ggplot(aes(x, y)) +
+    theme_tq() +
+    geom_point(alpha = 0.5) + 
+    #geom_label_repel(aes(label = symbol), size = 2) +
+    labs(
+        title = "UMAP Projection for 10 centers",
+        subtitle = "",
+        fill = ""
+    )
+```
+
+```{r}
+kmeans_10_obj <- kmeans_mapped_tbl_challenge_10 %>%
+    pull(k_means) %>%
+    pluck(10)
+
+# Convert it to a tibble with broom
+kmeans_10_clusters_tbl_challenge <- kmeans_10_obj %>% 
+    augment(stock_date_matrix_tbl) %>%
+    # Select the data we need
+    select(symbol, .cluster)
+
+# Bind data together
+umap_kmeans_10_results_tbl_challenge <- umap_results_tbl_challenge_10 %>%
+    left_join(kmeans_10_clusters_tbl_challenge)
+```
+
+```{r}
+umap_kmeans_10_results_tbl_challenge %>%
+    mutate(label_text = str_glue("Company: {symbol}
+                                 Cluster: {.cluster}")) %>%
+    
+    ggplot(aes(x, y, color = .cluster)) +
+    
+    # Geometries
+    geom_point() +
+    geom_label_repel(aes(label = label_text), size = 2, fill = "#282A36") +
+    
+    # Formatting
+    scale_color_manual(values = c("#2d72d6", "#2dc6d6", "#2dd692", "#e5217a", "#09d3c2", "#ff8800", "#5c25a2", "#42bf39", "#f0c800", "#3f8ed6")) +
+    labs(title = "Customer Segmentation: 2D Projection",
+    subtitle = "UMAP 2D Projection with K-Means Cluster Assignment",
+    caption = "Conclusion: 10 Company Segments identified using 2 algorithms") +
+    theme(legend.position = "none")
+```
+
+```{r}
+umap_kmeans_10_results_tbl_challenge %>%
+    mutate(label_text = str_glue("Company: {symbol}
+                                 Cluster: {.cluster}")) %>%
+    
+    ggplot(aes(x, y, color = .cluster)) +
+    
+    # Geometries
+    geom_point() +
+    #geom_label_repel(aes(label = label_text), size = 2, fill = "#282A36") +
+    
+    # Formatting
+    scale_color_manual(values = c("#2d72d6", "#2dc6d6", "#2dd692", "#e5217a", "#09d3c2", "#ff8800", "#5c25a2", "#42bf39", "#f0c800", "#3f8ed6")) +
+    labs(title = "Customer Segmentation: 2D Projection",
+    subtitle = "UMAP 2D Projection with K-Means Cluster Assignment",
+    caption = "Conclusion: 10 Company Segments identified using 2 algorithms") +
+    theme(legend.position = "none")
+```
+
+

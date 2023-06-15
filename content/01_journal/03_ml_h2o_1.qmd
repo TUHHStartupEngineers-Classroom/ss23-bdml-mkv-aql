@@ -1,0 +1,80 @@
+---
+title: "Automated machine learning with H2O part 1"
+author: "Agam Safaruddin"
+---
+
+
+# Challenge 
+* Use descriptive features and plot_ggpairs() to further investigate the features
+
+::: callout-note
+Since the plots are from the business case, rerunning the code would be pointless. So instead only the questions and the answers are given here
+:::
+
+## 1. Compensation Features
+What can you deduce about the interaction between Monthly Income and Attrition?
+
+ANSWER: C. Those that are leaving have a lower Monthly Income
+
+
+## 2. Compensation Features
+
+What can you deduce about the interaction between Percent Salary Hike and Attrition?
+
+ANSWER: D. It's difficult to deduce anything based on the visualization
+
+
+## 3. Compensation Features
+
+What can you deduce about the interaction between Stock Option Level and Attrition?
+
+ANSWER: B. Those that are staying have a higher stock option level
+
+
+## 4. Survey Results
+
+What can you deduce about the interaction between Environment Satisfaction and Attrition?
+
+ANSWER: C. It's difficult to deduce anything based on the visualization
+
+
+## 5. Survey Results
+
+What can you deduce about the interaction between Work Life Balance and Attrition
+
+ANSWER: B. Those that are staying have a higher density of 2's and 3's
+
+
+## 6. Performance Data
+
+What Can you deduce about the interaction between Job Involvement and Attrition?
+
+ANSWER: A. Those that are leaving have a lower density of 3's and 4's
+
+
+## 7. Work-Life Features
+
+What can you deduce about the interaction between Over Time and Attrition?
+
+ANSWER: A. The proportion of those leaving that are working Over Time are high compared to those that are not leaving
+
+
+## 8. Training and Education
+
+What can you deduce about the interaction between Training Times Last Year and Attrition
+
+ANSWER: B. People that leave tend to have less annual trainings
+
+
+## 9. Time-Based Features
+
+What can you deduce about the interaction between Years At Company and Attrition
+
+ANSWER: B. People that leave tend to have less working years at the company
+
+
+## 10. Time-Based Features
+
+What can you deduce about the interaction between Years Since Last Promotion and Attrition?
+
+ANSWER: C. It's difficult to deduce anything based on the visualization
