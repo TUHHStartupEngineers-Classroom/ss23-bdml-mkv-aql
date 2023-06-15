@@ -3,3 +3,7 @@ title: "Black Box Models with LIME"
 author: "Agam Safaruddin"
 ---
 
+# Challenge
+::: callout-note
+Since h2o requires java 64 bit, and I have been working on the challenges in kaggle.com. I will still publish this, and I will also include the notebook file called 'black-box-models-lime.ipynb' in the github workspace. In that notebook you can see the finished challenges
+:::

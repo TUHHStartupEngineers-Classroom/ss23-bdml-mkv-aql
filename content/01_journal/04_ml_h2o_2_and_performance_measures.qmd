@@ -4,7 +4,7 @@ author: "Agam Safaruddin"
 ---
 
 ::: callout-note
-Since h2o requires java 64 bit, and I have been working on the challenges in kaggle.com. I will still publish this, and I will also include the notebook file called 'automated-ml-with-h2o-2.ipynb' in the github workspace.
+Since h2o requires java 64 bit, and I have been working on the challenges in kaggle.com. I will still publish this, and I will also include the notebook file called 'automated-ml-with-h2o-2.ipynb' in the github workspace. In that notebook you can see the finished challenges.
 :::
 
 # Challenge 1 H20
