@@ -24,6 +24,8 @@ website:
             file: content/01_journal/04_ml_h2o_2_and_performance_measures.qmd
           - text: "05 Black box model with lime"
             file: content/01_journal/05_black_box_lime.qmd
+          - text: "06 Deep Learning"
+            file: content/01_journal/06_deep_learning.qmd
           - text: "tEst pAge"
             file: content/01_journal/Test_Training.qmd
       - text: "Class notes"
